@@ -1,0 +1,122 @@
+---
+- hosts: db
+  remote_user: root
+  become_user: root
+  become_method: sudo
+  tasks:
+   - name: Update /etc/hosts from inventory
+     lineinfile: dest=/etc/hosts regexp='.*{{item}}$' line='{{hostvars[item].ansible_default_ipv4.address}} {{item}}' state=present
+     with_items: '{{groups.all}}'
+     become: true
+
+   - name: Create Disk Partion
+     parted:
+       device: /dev/sdb
+       number: 1
+       flags: [ lvm ]
+       state: present
+     become: true
+
+   - name: Format Partition
+     filesystem:
+       fstype: xfs
+       dev: /dev/sdb1
+     become: true
+
+   - name: Mount the Partition
+     mount:
+       fstype: xfs
+       src: /dev/sdb1
+       path: /opt/oracle/oradata
+       state: mounted
+     become: true
+
+
+   - name: copy rpm file to server
+     copy:
+       src: oracle-database-ee-19c-1.0-1.x86_64.rpm
+       dest: /opt/oracle/oradata/oracle-database-ee-19c-1.0-1.x86_64.rpm
+       force: no
+     become: true
+
+   - name: download pre-reqs
+     get_url:
+       url: https://yum.oracle.com/repo/OracleLinux/OL7/latest/x86_64/getPackage/oracle-database-preinstall-19c-1.0-1.el7.x86_64.rpm
+       dest: /opt/oracle/oradata/
+     become: true
+
+   - name: install pre-reqs rpm
+     yum:
+       name: /opt/oracle/oradata/oracle-database-preinstall-19c-1.0-1.el7.x86_64.rpm
+       state: present
+     become: true
+
+   - name: provide permission to create folder /opt/oracle
+     command: chown -R oracle:oinstall /opt/oracle/
+     become: true
+
+   - name: install oracle database software rpm
+     yum:
+       name: /opt/oracle/oradata/oracle-database-ee-19c-1.0-1.x86_64.rpm
+       state: present
+     become: true
+
+   - name: create database using configure script
+     shell: |
+         chown -R oracle:oinstall /opt/oracle/oradata
+         /etc/init.d/oracledb_ORCLCDB-19c configure
+     become: true
+
+   - name: Install GlusterFS repository package
+     yum:
+       name: centos-release-gluster
+       state: present
+
+   - name: Install GlusterFS server package
+     yum:
+       name: glusterfs-server
+       state: present
+
+   - name: Install XFS filesystem package
+     yum:
+       name: xfsprogs
+       state: present
+
+   - name: Enable and start GlusterFS server service
+     service:
+       name: glusterd
+       state: started
+       enabled: yes
+
+   - name: Create partition
+     parted:
+       device: /dev/sdb
+       number: 1
+       state: present
+      
+   - name: Format the partition using XFS file system
+     filesystem:
+       fstype: xfs
+       dev: /dev/sdb1
+   - name: Create mount point directory
+     file:
+       path: /gluster/data
+       state: directory
+   - name: Mount the XFS partition to /gluster/data
+     mount:
+       path: /gluster/data
+       src: /dev/sdb1
+       fstype: xfs
+       opts: "defaults"
+       state: mounted
+   - name: Add nodes to /etc/hosts
+     become: true
+     lineinfile:
+       path: /etc/hosts
+       line: "{{ item }}"
+     with_items:
+       - "192.168.56.11           web-1"
+       - "192.168.56.12           web-2"
+       - "192.168.56.198          database"
+
+

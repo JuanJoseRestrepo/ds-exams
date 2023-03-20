@@ -1,0 +1,74 @@
+---
+- hosts: webservers
+  become: true
+  tasks:
+   - name: "Install httpd"
+     yum:
+       name: httpd
+   - name: "know hostname"
+     shell: "echo $HOSTNAME"
+     register: print_hostname
+   - name: "Configure httpd"
+     template:
+       src: templates/index.j2
+       dest: /var/www/html/index.html
+       owner: root
+       group: wheel
+       mode: '0644'
+   - name: "start httpd"
+     service:
+      name: httpd
+      state: restarted
+      enabled: yes
+   - name: Install GlusterFS repository package
+     yum:
+       name: centos-release-gluster
+       state: present
+
+   - name: Install GlusterFS server package
+     yum:
+       name: glusterfs-server
+       state: present
+
+   - name: Install XFS filesystem package
+     yum:
+       name: xfsprogs
+       state: present
+
+   - name: Enable and start GlusterFS server service
+     service:
+       name: glusterd
+       state: started
+       enabled: yes
+
+   - name: Create partition
+     parted:
+       device: /dev/sdb
+       number: 1
+       state: present
+      
+   - name: Format the partition using XFS file system
+     filesystem:
+       fstype: xfs
+       dev: /dev/sdb1
+   - name: Create mount point directory
+     file:
+       path: /gluster/data
+       state: directory
+   - name: Mount the XFS partition to /gluster/data
+     mount:
+       path: /gluster/data
+       src: /dev/sdb1
+       fstype: xfs
+       opts: "defaults"
+       state: mounted
+   - name: Add nodes to /etc/hosts
+     become: true
+     lineinfile:
+       path: /etc/hosts
+       line: "{{ item }}"
+     with_items:
+       - "192.168.56.11           web-1"
+       - "192.168.56.12           web-2"
+       - "192.168.56.198          database"
+
